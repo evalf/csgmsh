@@ -1,0 +1,25 @@
+[project]
+name = "csgmsh"
+readme = "README.md"
+authors = [
+    { name = "Evalf", email = "info@evalf.com" },
+]
+requires-python = '>=3.9'
+dependencies = [
+    "gmsh >=4,<5",
+    "treelog >=1,<2",
+]
+dynamic = ["description", "version"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+]
+
+[project.optional-dependencies]
+test = [
+    "nutils >=9,<10",
+    "meshio >=5,<6",
+]
+
+[build-system]
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
