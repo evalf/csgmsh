@@ -595,23 +595,34 @@ class Pipe(Shape):
 
 class Boundary(Entity):
 
-    def __init__(self, parent: Shape, patterns = ()):
+    def __init__(self, parent: Shape):
         self.parent = parent
-        self.patterns = patterns
         super().__init__(parent.ndims - 1)
 
     def __getitem__(self, item: str) -> 'Boundary':
-        return Boundary(self.parent, (*self.patterns, re.compile(item)))
+        return BoundarySegment(self.parent, item)
 
     def get_shapes(self):
         return self.parent.get_shapes()
 
     def select(self, fragments):
         vtags, btags = fragments[self.parent]
-        s = set.union(*[items for bname, items in btags.items() if all(pattern.fullmatch(bname) for pattern in self.patterns)])
-        if not s:
-            raise ValueError(f'{self.parent} does not have a boundary {", ".join(p.pattern for p in self.patterns)}')
-        return s
+        return set.union(*btags.values())
+
+
+class BoundarySegment(Entity):
+
+    def __init__(self, parent: Shape, item: str):
+        self.parent = parent
+        self.item = item
+        super().__init__(parent.ndims - 1)
+
+    def get_shapes(self):
+        return self.parent.get_shapes()
+
+    def select(self, fragments):
+        vtags, btags = fragments[self.parent]
+        return btags[self.item]
 
 
 class Skeleton(Entity):
