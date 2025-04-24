@@ -168,6 +168,39 @@ class Entity(ABC):
     def select(self, fragments):
         ...
 
+    def __sub__(self, other):
+        return SetOp(self, other, set.__sub__, '-')
+
+    def __and__(self, other):
+        return SetOp(self, other, set.__and__, '&')
+
+    def __or__(self, other):
+        return SetOp(self, other, set.__or__, '|')
+
+    def __repr__(self):
+        return f'{type(self).__name__}({self.ndims}D)'
+
+
+class SetOp(Entity):
+
+    def __init__(self, a, b, op, sym):
+        assert a.ndims == b.ndims
+        self.a = a
+        self.b = b
+        self.op = op
+        self.sym = sym
+        super().__init__(a.ndims)
+
+    def get_shapes(self):
+        yield from self.a.get_shapes()
+        yield from self.b.get_shapes()
+
+    def select(self, fragments):
+        return self.op(self.a.select(fragments), self.b.select(fragments))
+
+    def __repr__(self):
+        return f'{self.a:!r}{self.sym}{self.b:!r}'
+
 
 class Shape(Entity):
 
@@ -177,15 +210,6 @@ class Shape(Entity):
 
     def get_shapes(self):
         yield self
-
-    def __sub__(self, other: 'Shape') -> 'BinaryOp':
-        return BinaryOp(self, other, 'cut')
-
-    def __and__(self, other: 'Shape') -> 'BinaryOp':
-        return BinaryOp(self, other, 'intersect')
-
-    def __or__(self, other: 'Shape') -> 'BinaryOp':
-        return BinaryOp(self, other, 'fuse')
 
     def extruded(self, segments: Sequence[Tuple[float,float,float]], **orientation_kwargs) -> 'Pipe':
         '''Extruded 2D shape along 3D wire.
@@ -432,12 +456,11 @@ class Cylinder(Shape):
         return (3, occ.addCylinder(*self.center, *self.axis, self.radius)),
 
 
-class BinaryOp(Shape):
+class Cut(Shape):
 
-    def __init__(self, shape1: Shape, shape2: Shape, op: str):
+    def __init__(self, shape1: Shape, shape2: Shape):
         self.shape1 = shape1
         self.shape2 = shape2
-        self.op = op
         assert shape2.ndims == shape1.ndims
         super().__init__(shape1.ndims)
 
@@ -445,8 +468,39 @@ class BinaryOp(Shape):
         return [f'section{i}' for i in range(n)]
 
     def add_to(self, occ):
-        op = getattr(occ, self.op)
-        return op(objectDimTags=self.shape1.add_to(occ), toolDimTags=self.shape2.add_to(occ))[0]
+        return occ.cut(objectDimTags=self.shape1.add_to(occ), toolDimTags=self.shape2.add_to(occ))[0]
+
+
+class Intersect(Shape):
+
+    def __init__(self, *shapes):
+        self.shapes = shapes
+        ndims = shapes[0].ndims
+        assert all(shape.ndims == ndims for shape in shapes)
+        super().__init__(ndims)
+
+    def bnames(self, n):
+        return [f'section{i}' for i in range(n)]
+
+    def add_to(self, occ):
+        obj, *tool = [tag for shape in self.shapes for tag in shape.add_to(occ)]
+        return occ.intersect(objectDimTags=[obj], toolDimTags=tool)[0]
+
+
+class Fuse(Shape):
+
+    def __init__(self, *shapes):
+        self.shapes = shapes
+        ndims = shapes[0].ndims
+        assert all(shape.ndims == ndims for shape in shapes)
+        super().__init__(ndims)
+
+    def bnames(self, n):
+        return [f'section{i}' for i in range(n)]
+
+    def add_to(self, occ):
+        obj, *tool = [tag for shape in self.shapes for tag in shape.add_to(occ)]
+        return occ.fuse(objectDimTags=[obj], toolDimTags=tool)[0]
 
 
 class Revolved(Shape):

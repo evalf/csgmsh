@@ -157,40 +157,57 @@ class TestShape(unittest.TestCase):
             with self.subTest('boundary'):
                 self.assertAreaCentroid(topo.boundary, geom, mass=area, centroid=(2.5,3.5,4.5), degree=2, places=4)
 
-    def test_cut_square(self):
+    def test_cut(self):
         'Unit square with circular cutout'
         rect = shape.Rectangle()
         circ = shape.Circle(center=(1.,1.), radius=.5)
-        shapes = dict(dom=rect-circ,
-            circ=circ.boundary,
-            left=rect.boundary['left'],
-            right=rect.boundary['right'],
-            bottom=rect.boundary['bottom'],
-            top=rect.boundary['top'])
-        topo, geom = nutils_mesh(shapes, elemsize=.1, order=2)
-        with self.subTest('interior'):
-            volume = 1 - numpy.pi/16
-            c = 1 - 11/24/volume
-            self.assertAreaCentroid(topo, geom, mass=volume, centroid=(c,c), degree=2, places=5)
-        with self.subTest('boundary'):
-            self.assertAreaCentroid(topo.boundary['left'], geom, mass=1, centroid=(0,.5), places=10)
-            self.assertAreaCentroid(topo.boundary['right'], geom, mass=.5, centroid=(1,.25), places=10)
-            self.assertAreaCentroid(topo.boundary['bottom'], geom, mass=1, centroid=(.5,0), places=10)
-            self.assertAreaCentroid(topo.boundary['top'], geom, mass=.5, centroid=(.25,1), places=10)
-            self.assertAreaCentroid(topo.boundary['circ'], geom, mass=numpy.pi*.5*2/4, centroid=(1-1/numpy.pi,1-1/numpy.pi), places=6)
+        for simple in True, False:
+            cut = rect - circ if simple else shape.Cut(rect, circ)
+            shapes = dict(dom=cut,
+                circ=circ.boundary,
+                left=rect.boundary['left'],
+                right=rect.boundary['right'],
+                bottom=rect.boundary['bottom'],
+                top=rect.boundary['top'])
+            topo, geom = nutils_mesh(shapes, elemsize=.1, order=2)
+            with self.subTest('simple interior' if simple else 'occ interior'):
+                volume = 1 - numpy.pi/16
+                c = 1 - 11/24/volume
+                self.assertAreaCentroid(topo, geom, mass=volume, centroid=(c,c), degree=2, places=5)
+            with self.subTest('simple boundary' if simple else 'occ boundary'):
+                self.assertAreaCentroid(topo.boundary['left'], geom, mass=1, centroid=(0,.5), places=10)
+                self.assertAreaCentroid(topo.boundary['right'], geom, mass=.5, centroid=(1,.25), places=10)
+                self.assertAreaCentroid(topo.boundary['bottom'], geom, mass=1, centroid=(.5,0), places=10)
+                self.assertAreaCentroid(topo.boundary['top'], geom, mass=.5, centroid=(.25,1), places=10)
+                self.assertAreaCentroid(topo.boundary['circ'], geom, mass=numpy.pi*.5*2/4, centroid=(1-1/numpy.pi,1-1/numpy.pi), places=6)
 
-    def test_fused(self):
+    def test_fuse(self):
         'Unit square fused with a circle'
         rect = shape.Rectangle()
         circ = shape.Circle(center=(1.,.5), radius=.5)
-        topo, geom = nutils_mesh(dict(dom=rect|circ), elemsize=.1, order=2)
-        #topo, geom = nutils_mesh(dict(dom=rect|circ), elemsize=.1, order=2)
-        with self.subTest('interior'):
-            volume = 1 + numpy.pi/8
-            self.assertAreaCentroid(topo, geom, mass=volume, centroid=((7/12+numpy.pi/8)/volume,.5), degree=2, places=5)
-        with self.subTest('boundary'):
-            area = 3 + numpy.pi/2
-            self.assertAreaCentroid(topo.boundary, geom, mass=area, centroid=((3/2+numpy.pi/2)/area,.5), places=5)
+        for simple in True, False:
+            fuse = rect | circ if simple else shape.Fuse(rect, circ)
+            topo, geom = nutils_mesh(dict(dom=fuse), elemsize=.1, order=2)
+            with self.subTest('simple interior' if simple else 'occ interior'):
+                volume = 1 + numpy.pi/8
+                self.assertAreaCentroid(topo, geom, mass=volume, centroid=((7/12+numpy.pi/8)/volume,.5), degree=2, places=5)
+            with self.subTest('simple boundary' if simple else 'icc boundary'):
+                area = 3 + numpy.pi/2
+                self.assertAreaCentroid(topo.boundary, geom, mass=area, centroid=((3/2+numpy.pi/2)/area,.5), places=5)
+
+    def test_intersect(self):
+        'Semi-circle'
+        rect = shape.Rectangle()
+        circ = shape.Circle(center=(1.,.5), radius=.5)
+        for simple in True, False:
+            intersect = rect & circ if simple else shape.Intersect(rect, circ)
+            topo, geom = nutils_mesh(dict(dom=intersect), elemsize=.1, order=2)
+            with self.subTest('simple interior' if simple else 'occ interior'):
+                volume = numpy.pi/8
+                self.assertAreaCentroid(topo, geom, mass=volume, centroid=((numpy.pi/8-1/12)/volume,.5), degree=2, places=5)
+            with self.subTest('simple boundary' if simple else 'occ boundary'):
+                area = 1 + numpy.pi/2
+                self.assertAreaCentroid(topo.boundary, geom, mass=area, centroid=((numpy.pi/2+.5)/area,.5), places=5)
 
     def test_revolved2(self):
         orig = numpy.array([2., 3.])
