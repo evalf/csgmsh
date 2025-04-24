@@ -328,6 +328,22 @@ class Rectangle(Shape):
     def add_to(self, occ):
         return (2, occ.addRectangle(x=self.x, y=self.y, z=0., dx=self.dx, dy=self.dy)),
 
+    @property
+    def bottom(self):
+        return BoundarySegment(self, 'bottom')
+
+    @property
+    def right(self):
+        return BoundarySegment(self, 'right')
+
+    @property
+    def top(self):
+        return BoundarySegment(self, 'top')
+
+    @property
+    def left(self):
+        return BoundarySegment(self, 'left')
+
 
 class Circle(Shape):
     'Circular domain'
@@ -400,6 +416,10 @@ class Path(Shape):
         D = numpy.copysign(numpy.sqrt(D2), r)
         return cx + dy * D, cy - dx * D,
 
+    @property
+    def segment(self):
+        return [BoundarySegment(self, f'segment{i}') for i in range(len(self.vertices))]
+
 
 class Box(Shape):
     'Box'
@@ -421,6 +441,30 @@ class Box(Shape):
 
     def add_to(self, occ):
         return (3, occ.addBox(x=self.x, y=self.y, z=self.z, dx=self.dx, dy=self.dy, dz=self.dz)),
+
+    @property
+    def left(self):
+        return BoundarySegment(self, 'left')
+
+    @property
+    def right(self):
+        return BoundarySegment(self, 'right')
+
+    @property
+    def bottom(self):
+        return BoundarySegment(self, 'bottom')
+
+    @property
+    def top(self):
+        return BoundarySegment(self, 'top')
+
+    @property
+    def front(self):
+        return BoundarySegment(self, 'front')
+
+    @property
+    def back(self):
+        return BoundarySegment(self, 'back')
 
 
 class Sphere(Shape):
@@ -454,6 +498,18 @@ class Cylinder(Shape):
 
     def add_to(self, occ):
         return (3, occ.addCylinder(*self.center, *self.axis, self.radius)),
+
+    @property
+    def side(self):
+        return BoundarySegment(self, 'side')
+
+    @property
+    def back(self):
+        return BoundarySegment(self, 'back')
+
+    @property
+    def front(self):
+        return BoundarySegment(self, 'front')
 
 
 class Cut(Shape):
@@ -508,27 +564,41 @@ class Revolved(Shape):
     def __init__(self, shape: Shape, angle: float, orientation: Orientation):
         assert orientation.ndims == shape.ndims + 1
         self.shape = shape
-        self.front = orientation
+        self.orientation = orientation
         self.angle = float(angle) * numpy.pi / 180
+        self.partial = self.angle < 2 * numpy.pi
         super().__init__(ndims=orientation.ndims)
 
     def bnames(self, n):
-        partial = self.angle < 2 * numpy.pi
-        if partial:
+        if self.partial:
             yield 'back'
             n -= 2
         for bname in self.shape.bnames(n):
             yield f'side-{bname}'
-        if partial:
+        if self.partial:
             yield 'front'
 
     def add_to(self, occ):
         front = self.shape.add_to(occ)
-        self.front.orient(occ, front)
-        axes, origin = self.front.axes.as_3(self.front.origin)
+        self.orientation.orient(occ, front)
+        axes, origin = self.orientation.axes.as_3(self.orientation.origin)
         iaxis = {2: 2, 3: 1}[self.ndims] # TODO: allow variation of revolution axis in 3D
         dimtags = occ.revolve(front, *origin, *axes[iaxis], -self.angle)
         return [(dim, tag) for dim, tag in dimtags if dim == self.ndims]
+
+    @property
+    def front(self):
+        assert self.partial
+        return BoundarySegment(self, 'front')
+
+    @property
+    def back(self):
+        assert self.partial
+        return BoundarySegment(self, 'back')
+
+    @property
+    def side(self):
+        return BoundarySegmentGroups(self, 'side-')
 
 
 class Pipe(Shape):
@@ -538,7 +608,7 @@ class Pipe(Shape):
         self.shape = shape
         self.nsegments = len(segments)
 
-        self.front = orientation
+        self.front_orientation = orientation
         vertices = [orientation.origin]
         midpoints = []
         for length, *curvature in segments:
@@ -563,7 +633,7 @@ class Pipe(Shape):
             vertices.append(orientation.origin)
         self.midpoints = tuple(midpoints)
         self.vertices = tuple(vertices)
-        self.back = orientation
+        self.back_orientation = orientation
 
         super().__init__(ndims=orientation.ndims)
 
@@ -589,8 +659,20 @@ class Pipe(Shape):
                else occ.addCircleArc(p1, occ.addPoint(*v, *z), p2) for p1, v, p2 in zip(points, self.midpoints, points[1:])]
         wire_tag = occ.addWire(segments)
         front = self.shape.add_to(occ)
-        self.front.orient(occ, front)
+        self.front_orientation.orient(occ, front)
         return occ.addPipe(front, wire_tag)
+
+    @property
+    def front(self):
+        return BoundarySegment(self, 'front')
+
+    @property
+    def back(self):
+        return BoundarySegment(self, 'back')
+
+    @property
+    def segment(self):
+        return [BoundarySegmentGroups(self, f'segment{i}-') for i in range(self.nsegments)]
 
 
 class Boundary(Entity):
@@ -598,9 +680,6 @@ class Boundary(Entity):
     def __init__(self, parent: Shape):
         self.parent = parent
         super().__init__(parent.ndims - 1)
-
-    def __getitem__(self, item: str) -> 'Boundary':
-        return BoundarySegment(self.parent, item)
 
     def get_shapes(self):
         return self.parent.get_shapes()
@@ -623,6 +702,24 @@ class BoundarySegment(Entity):
     def select(self, fragments):
         vtags, btags = fragments[self.parent]
         return btags[self.item]
+
+
+class BoundarySegmentGroups(Entity):
+
+    def __init__(self, parent: Shape, prefix: str):
+        self.parent = parent
+        self.prefix = prefix
+        super().__init__(parent.ndims - 1)
+
+    def __getattr__(self, attr):
+        return BoundarySegment(self.parent, f'{self.prefix}{attr}')
+
+    def get_shapes(self):
+        return self.parent.get_shapes()
+
+    def select(self, fragments):
+        vtags, btags = fragments[self.parent]
+        return set.union(*[tags for name, tags in btags.items() if name.startswith(self.prefix)])
 
 
 class Skeleton(Entity):
