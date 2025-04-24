@@ -46,8 +46,8 @@ def generate_mesh(model, groups, elemsize) -> None:
     fragments = {}
     for shape, (vslice, bslice) in zip(shapes, slices):
         vtags = _tags([dimtag for dimtags in fragment_map[vslice] for dimtag in dimtags], ndims)
-        btagslist = [_tags(dimtags, ndims-1) for dimtags in fragment_map[bslice]]
-        btags = dict(zip(shape.bnames(len(btagslist)), btagslist))
+        btags = [_tags(dimtags, ndims-1) for dimtags in fragment_map[bslice]]
+        assert shape.nbnd is None or shape.nbnd == len(btags)
         shape.make_periodic(model.mesh, btags)
         fragments[shape] = vtags, btags
 

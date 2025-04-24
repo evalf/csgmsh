@@ -364,14 +364,14 @@ class TestInterval(unittest.TestCase):
 
     def test_left_right(self):
         iv = shape.Interval(left=1, right=3)
-        self.assertAlmostEqual(iv.left, 1)
-        self.assertAlmostEqual(iv.right, 3)
-        self.assertAlmostEqual(iv.center, 2)
-        self.assertAlmostEqual(iv.length, 2)
+        self.assertAlmostEqual(iv._left, 1)
+        self.assertAlmostEqual(iv._right, 3)
+        self.assertAlmostEqual(iv._center, 2)
+        self.assertAlmostEqual(iv._length, 2)
 
     def test_center_length(self):
         iv = shape.Interval(center=1, length=4)
-        self.assertAlmostEqual(iv.left, -1)
-        self.assertAlmostEqual(iv.right, 3)
-        self.assertAlmostEqual(iv.center, 1)
-        self.assertAlmostEqual(iv.length, 4)
+        self.assertAlmostEqual(iv._left, -1)
+        self.assertAlmostEqual(iv._right, 3)
+        self.assertAlmostEqual(iv._center, 1)
+        self.assertAlmostEqual(iv._length, 4)

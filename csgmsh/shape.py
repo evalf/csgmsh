@@ -1,6 +1,6 @@
 from typing import Tuple, Optional, Iterable, Sequence, NamedTuple
 from abc import ABC, abstractmethod
-import numpy, re, math
+import numpy, re, math, functools
 
 
 class Axes2:
@@ -204,7 +204,8 @@ class SetOp(Entity):
 
 class Shape(Entity):
 
-    def __init__(self, ndims: int, periodicity: Iterable[Tuple[str,str,Affine]] = ()):
+    def __init__(self, ndims: int, nbnd: Optional[int], periodicity: Iterable[Tuple[str,str,Affine]] = ()):
+        self.nbnd = nbnd
         self._periodicity = tuple(periodicity)
         super().__init__(ndims)
 
@@ -254,38 +255,34 @@ class Shape(Entity):
     def add_to(self, occ):
         ...
 
-    @abstractmethod
-    def bnames(self, n: int) -> Iterable[str]:
-        ...
-
 
 class Interval(Shape):
 
     def __init__(self, left: Optional[float] = None, right: Optional[float] = None, center: Optional[float] = None, length: Optional[float] = None, periodic: bool = False):
-        self.left, self.right, self.center, self.length = overdimensioned((left, 1, 0), (right, 0, 1), (center, .5, .5), (length, -1, 1))
-        if self.length <= 0:
+        self._left, self._right, self._center, self._length = overdimensioned((left, 1, 0), (right, 0, 1), (center, .5, .5), (length, -1, 1))
+        if self._length <= 0:
             raise ValueError('negative interval')
         self.periodic = periodic
-        super().__init__(ndims=1)
-
-    def bnames(self, n):
-        assert n == 2
-        return 'left', 'right'
+        super().__init__(ndims=1, nbnd=2)
 
     def add_to(self, occ):
-        p1, p2 = [occ.addPoint(x, 0, 0) for x in (self.left, self.right)]
+        p1, p2 = [occ.addPoint(x, 0, 0) for x in (self._left, self._right)]
         return (1, occ.addLine(p1, p2)),
+
+    @property
+    def left(self):
+        return BoundarySegment(self, 0)
+
+    @property
+    def right(self):
+        return BoundarySegment(self, 1)
 
 
 class Point(Shape):
 
     def __init__(self, *p):
         self.p = p
-        super().__init__(ndims=0)
-
-    def bnames(self, n: int) -> Iterable[str]:
-        assert n == 0
-        return ()
+        super().__init__(ndims=0, nbnd=0)
 
     def add_to(self, occ):
         p = occ.addPoint(*self.p, *[0]*(3-len(self.p)))
@@ -298,11 +295,7 @@ class Line(Shape):
         self.p1 = p1
         self.p2 = p2
         assert len(p1) == len(p2)
-        super().__init__(ndims=1)
-
-    def bnames(self, n):
-        assert n == 2
-        return 'left', 'right'
+        super().__init__(ndims=1, nbnd=2)
 
     def add_to(self, occ):
         p1, p2 = [occ.addPoint(*p, *[0]*(3-len(p))) for p in (self.p1, self.p2)]
@@ -313,36 +306,31 @@ class Rectangle(Shape):
     'Rectangular domain'
 
     def __init__(self, x: Interval = Interval(0, 1), y: Interval = Interval(0, 1)):
-        self.x = x.left
-        self.dx = x.length
-        self.y = y.left
-        self.dy = y.length
-        periodicity = [(b, a, Affine.shift(*d*iv.length)) for d, (a, iv, b) in zip(numpy.eye(3),
-            [('left', x, 'right'), ('bottom', y, 'top')]) if iv.periodic]
-        super().__init__(ndims=2, periodicity=periodicity)
-
-    def bnames(self, n):
-        assert n == 4
-        return 'bottom', 'right', 'top', 'left'
+        self.x = x._left
+        self.dx = x._length
+        self.y = y._left
+        self.dy = y._length
+        periodicity = [(b, a, Affine.shift(*d*iv._length)) for d, (a, iv, b) in zip(numpy.eye(3), [(3, x, 1), (0, y, 2)]) if iv.periodic]
+        super().__init__(ndims=2, nbnd=4, periodicity=periodicity)
 
     def add_to(self, occ):
         return (2, occ.addRectangle(x=self.x, y=self.y, z=0., dx=self.dx, dy=self.dy)),
 
     @property
     def bottom(self):
-        return BoundarySegment(self, 'bottom')
+        return BoundarySegment(self, 0)
 
     @property
     def right(self):
-        return BoundarySegment(self, 'right')
+        return BoundarySegment(self, 1)
 
     @property
     def top(self):
-        return BoundarySegment(self, 'top')
+        return BoundarySegment(self, 2)
 
     @property
     def left(self):
-        return BoundarySegment(self, 'left')
+        return BoundarySegment(self, 3)
 
 
 class Circle(Shape):
@@ -351,11 +339,7 @@ class Circle(Shape):
     def __init__(self, center = (0., 0.), radius: float = 1.):
         self.center = center
         self.radius = radius
-        super().__init__(ndims=2)
-
-    def bnames(self, n):
-        assert n == 1
-        yield 'wall'
+        super().__init__(ndims=2, nbnd=1)
 
     def add_to(self, occ):
         return (2, occ.addDisk(*self.center, 0., rx=self.radius, ry=self.radius)),
@@ -369,11 +353,7 @@ class Ellipse(Shape):
         self.width = width
         self.height = height
         self.angle = angle
-        super().__init__(ndims=2)
-
-    def bnames(self, n):
-        assert n == 1
-        yield 'wall'
+        super().__init__(ndims=2, nbnd=1)
 
     def add_to(self, occ):
         height, width, angle = (self.height, self.width, self.angle) if self.width > self.height \
@@ -391,11 +371,7 @@ class Path(Shape):
         assert all(len(v) == 2 for v in self.vertices)
         self.curvatures = numpy.array(curvatures) if curvatures else numpy.zeros(len(self.vertices))
         assert len(self.curvatures) == len(self.vertices)
-        super().__init__(ndims=2)
-
-    def bnames(self, n):
-        assert n == len(self.vertices)
-        return [f'segment{i}' for i in range(n)]
+        super().__init__(ndims=2, nbnd=len(vertices))
 
     def add_to(self, occ):
         points = [(v, occ.addPoint(*v, 0.)) for v in self.vertices]
@@ -418,53 +394,48 @@ class Path(Shape):
 
     @property
     def segment(self):
-        return [BoundarySegment(self, f'segment{i}') for i in range(len(self.vertices))]
+        return [BoundarySegment(self, i) for i in range(len(self.vertices))]
 
 
 class Box(Shape):
     'Box'
 
     def __init__(self, x: Interval = Interval(0, 1), y: Interval = Interval(0, 1), z: Interval = Interval(0, 1)):
-        self.x = x.left
-        self.dx = x.length
-        self.y = y.left
-        self.dy = y.length
-        self.z = z.left
-        self.dz = z.length
-        periodicity = [(b, a, Affine.shift(*d*iv.length)) for d, (a, iv, b) in zip(numpy.eye(3),
-            [('left', x, 'right'), ('bottom', y, 'top'), ('front', z, 'back')]) if iv.periodic]
-        super().__init__(ndims=3, periodicity=periodicity)
-
-    def bnames(self, n):
-        assert n == 6
-        return 'left', 'right', 'bottom', 'top', 'front', 'back'
+        self.x = x._left
+        self.dx = x._length
+        self.y = y._left
+        self.dy = y._length
+        self.z = z._left
+        self.dz = z._length
+        periodicity = [(b, a, Affine.shift(*d*iv._length)) for d, (a, iv, b) in zip(numpy.eye(3), [(0, x, 1), (2, y, 3), (4, z, 5)]) if iv.periodic]
+        super().__init__(ndims=3, nbnd=6, periodicity=periodicity)
 
     def add_to(self, occ):
         return (3, occ.addBox(x=self.x, y=self.y, z=self.z, dx=self.dx, dy=self.dy, dz=self.dz)),
 
     @property
     def left(self):
-        return BoundarySegment(self, 'left')
+        return BoundarySegment(self, 0)
 
     @property
     def right(self):
-        return BoundarySegment(self, 'right')
+        return BoundarySegment(self, 1)
 
     @property
     def bottom(self):
-        return BoundarySegment(self, 'bottom')
+        return BoundarySegment(self, 2)
 
     @property
     def top(self):
-        return BoundarySegment(self, 'top')
+        return BoundarySegment(self, 3)
 
     @property
     def front(self):
-        return BoundarySegment(self, 'front')
+        return BoundarySegment(self, 4)
 
     @property
     def back(self):
-        return BoundarySegment(self, 'back')
+        return BoundarySegment(self, 5)
 
 
 class Sphere(Shape):
@@ -473,11 +444,7 @@ class Sphere(Shape):
     def __init__(self, center = (0., 0., 0., ), radius: float = 1.):
         self.center = center
         self.radius = radius
-        super().__init__(ndims=3)
-
-    def bnames(self, n):
-        assert n == 1
-        return 'wall',
+        super().__init__(ndims=3, nbnd=1)
 
     def add_to(self, occ):
         return (3, occ.addSphere(*self.center, self.radius)),
@@ -490,26 +457,22 @@ class Cylinder(Shape):
         self.center = front
         self.axis = back[0] - front[0], back[1] - front[1], back[2] - front[2]
         self.radius = radius
-        super().__init__(ndims=3, periodicity=[('back', 'front', Affine.shift(*self.axis))] if periodic else ())
-
-    def bnames(self, n):
-        assert n == 3
-        return 'side', 'back', 'front'
+        super().__init__(ndims=3, nbnd=3, periodicity=[(1, 2, Affine.shift(*self.axis))] if periodic else ())
 
     def add_to(self, occ):
         return (3, occ.addCylinder(*self.center, *self.axis, self.radius)),
 
     @property
     def side(self):
-        return BoundarySegment(self, 'side')
+        return BoundarySegment(self, 0)
 
     @property
     def back(self):
-        return BoundarySegment(self, 'back')
+        return BoundarySegment(self, 1)
 
     @property
     def front(self):
-        return BoundarySegment(self, 'front')
+        return BoundarySegment(self, 2)
 
 
 class Cut(Shape):
@@ -518,10 +481,7 @@ class Cut(Shape):
         self.shape1 = shape1
         self.shape2 = shape2
         assert shape2.ndims == shape1.ndims
-        super().__init__(shape1.ndims)
-
-    def bnames(self, n):
-        return [f'section{i}' for i in range(n)]
+        super().__init__(shape1.ndims, nbnd=None)
 
     def add_to(self, occ):
         return occ.cut(objectDimTags=self.shape1.add_to(occ), toolDimTags=self.shape2.add_to(occ))[0]
@@ -533,10 +493,7 @@ class Intersect(Shape):
         self.shapes = shapes
         ndims = shapes[0].ndims
         assert all(shape.ndims == ndims for shape in shapes)
-        super().__init__(ndims)
-
-    def bnames(self, n):
-        return [f'section{i}' for i in range(n)]
+        super().__init__(ndims, nbnd=None)
 
     def add_to(self, occ):
         obj, *tool = [tag for shape in self.shapes for tag in shape.add_to(occ)]
@@ -549,10 +506,7 @@ class Fuse(Shape):
         self.shapes = shapes
         ndims = shapes[0].ndims
         assert all(shape.ndims == ndims for shape in shapes)
-        super().__init__(ndims)
-
-    def bnames(self, n):
-        return [f'section{i}' for i in range(n)]
+        super().__init__(ndims, nbnd=None)
 
     def add_to(self, occ):
         obj, *tool = [tag for shape in self.shapes for tag in shape.add_to(occ)]
@@ -567,16 +521,7 @@ class Revolved(Shape):
         self.orientation = orientation
         self.angle = float(angle) * numpy.pi / 180
         self.partial = self.angle < 2 * numpy.pi
-        super().__init__(ndims=orientation.ndims)
-
-    def bnames(self, n):
-        if self.partial:
-            yield 'back'
-            n -= 2
-        for bname in self.shape.bnames(n):
-            yield f'side-{bname}'
-        if self.partial:
-            yield 'front'
+        super().__init__(ndims=orientation.ndims, nbnd=None if shape.nbnd is None else shape.nbnd + 2 if self.partial else shape.nbnd)
 
     def add_to(self, occ):
         front = self.shape.add_to(occ)
@@ -589,16 +534,17 @@ class Revolved(Shape):
     @property
     def front(self):
         assert self.partial
-        return BoundarySegment(self, 'front')
+        return BoundarySegment(self, -1)
 
     @property
     def back(self):
         assert self.partial
-        return BoundarySegment(self, 'back')
+        return BoundarySegment(self, 0)
 
     @property
     def side(self):
-        return BoundarySegmentGroups(self, 'side-')
+        s = slice(1, -1) if self.partial else slice(None)
+        return WrappedBoundary(self, self.shape, lambda btags: btags[s])
 
 
 class Pipe(Shape):
@@ -635,22 +581,7 @@ class Pipe(Shape):
         self.vertices = tuple(vertices)
         self.back_orientation = orientation
 
-        super().__init__(ndims=orientation.ndims)
-
-    def bnames(self, n):
-        nb, rem = divmod(n-2, self.nsegments)
-        assert not rem
-        if self.ndims == 2:
-            bnames = [f'segment{i}-{bname}' for i in range(self.nsegments) for bname in self.shape.bnames(nb)]
-            bnames.insert(1, 'front')
-            bnames.append('back')
-        elif self.ndims == 3:
-            bnames = [f'segment{i}-{bname}' for bname in self.shape.bnames(nb) for i in range(self.nsegments)]
-            bnames.insert(0, 'front')
-            bnames.append('back')
-        else:
-            raise NotImplementedError
-        return bnames
+        super().__init__(ndims=orientation.ndims, nbnd=None if shape.nbnd is None else 2 + shape.nbnd * self.nsegments)
 
     def add_to(self, occ):
         z = (0,) * (3 - self.ndims)
@@ -664,15 +595,26 @@ class Pipe(Shape):
 
     @property
     def front(self):
-        return BoundarySegment(self, 'front')
+        return BoundarySegment(self, 0 if self.ndims == 3 else 1)
 
     @property
     def back(self):
-        return BoundarySegment(self, 'back')
+        return BoundarySegment(self, -1)
 
     @property
     def segment(self):
-        return [BoundarySegmentGroups(self, f'segment{i}-') for i in range(self.nsegments)]
+        if self.ndims == 3:
+            def subset(i, btags):
+                btags = btags[1:-1]
+                assert len(btags) % self.nsegments == 0
+                return btags[i::self.nsegments]
+        else:
+            def subset(i, btags):
+                btags = btags[:1] + btags[2:-1]
+                n, m = divmod(len(btags), self.nsegments)
+                assert m == 0
+                return btags[i*n:][:n]
+        return [WrappedBoundary(self, self.shape, functools.partial(subset, i)) for i in range(self.nsegments)]
 
 
 class Boundary(Entity):
@@ -686,7 +628,7 @@ class Boundary(Entity):
 
     def select(self, fragments):
         vtags, btags = fragments[self.parent]
-        return set.union(*btags.values())
+        return set.union(*btags)
 
 
 class BoundarySegment(Entity):
@@ -704,22 +646,40 @@ class BoundarySegment(Entity):
         return btags[self.item]
 
 
-class BoundarySegmentGroups(Entity):
+class WrappedBoundary(Entity):
 
-    def __init__(self, parent: Shape, prefix: str):
+    def __init__(self, parent: Shape, wrapped: Shape, subset):
         self.parent = parent
-        self.prefix = prefix
+        self.wrapped = wrapped
+        self.subset = subset
         super().__init__(parent.ndims - 1)
 
     def __getattr__(self, attr):
-        return BoundarySegment(self.parent, f'{self.prefix}{attr}')
+        return WrappedBoundarySegment(self.parent, getattr(self.wrapped, attr), self.subset)
 
     def get_shapes(self):
         return self.parent.get_shapes()
 
     def select(self, fragments):
         vtags, btags = fragments[self.parent]
-        return set.union(*[tags for name, tags in btags.items() if name.startswith(self.prefix)])
+        return set.union(*self.subset(btags))
+
+
+class WrappedBoundarySegment(Entity):
+
+    def __init__(self, parent: Shape, wrapped: Shape, subset):
+        self.parent = parent
+        self.wrapped = wrapped
+        self.subset = subset
+        super().__init__(parent.ndims - 1)
+
+    def get_shapes(self):
+        return self.parent.get_shapes()
+
+    def select(self, fragments):
+        vtags, btags = fragments[self.parent]
+        fragments = {self.wrapped.parent: (None, self.subset(btags))}
+        return self.wrapped.select(fragments)
 
 
 class Skeleton(Entity):
@@ -728,7 +688,7 @@ class Skeleton(Entity):
         return ()
 
     def select(self, fragments):
-        return set.union(*[items for vtags, btags in fragments.values() for items in btags.values()])
+        return set.union(*[btag for vtags, btags in fragments.values() for btag in btags])
 
 
 # vim:sw=4:sts=4:et
