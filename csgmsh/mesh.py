@@ -8,7 +8,17 @@ def _tags(dimtags, expect_dim: int):
 
 def generate_mesh(model, groups, elemsize) -> None:
 
-    shapes = [shape for entity in groups.values() for shape in entity.get_shapes()]
+    if isinstance(groups, dict):
+        groups = groups.items()
+    else:
+        seen = dict()
+        for name, entity in groups:
+            s = seen.setdefault(entity.ndims, set())
+            if name in s:
+                raise ValueError(f'{name!r} occurs twice for dimension {entity.ndims}')
+            s.add(name)
+
+    shapes = [shape for _, entity in groups for shape in entity.get_shapes()]
     shapes = tuple(dict.fromkeys(shapes)) # stable unique via dict
 
     ndims = shapes[0].ndims
@@ -51,7 +61,7 @@ def generate_mesh(model, groups, elemsize) -> None:
         shape.make_periodic(model.mesh, btags)
         fragments[shape] = vtags, btags
 
-    for name, item in groups.items():
+    for name, item in groups:
         tag = model.addPhysicalGroup(item.ndims, sorted(item.select(fragments)))
         model.setPhysicalName(dim=item.ndims, tag=tag, name=name)
 
