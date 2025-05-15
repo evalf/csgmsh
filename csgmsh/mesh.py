@@ -74,7 +74,7 @@ def generate_mesh(model, groups, elemsize) -> None:
 
 def _write(fname: str, groups, elemsize, order: int) -> None:
     import gmsh
-    gmsh.initialize()
+    gmsh.initialize(interruptible=False)
     gmsh.option.setNumber('General.Terminal', 1)
     gmsh.option.setNumber('Mesh.Binary', 1)
     gmsh.option.setNumber('Mesh.ElementOrder', order)
