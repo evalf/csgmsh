@@ -101,11 +101,12 @@ def write(fname: str, groups, elemsize, order: int = 1, fork: bool = hasattr(os,
     if os.fork(): # parent process
 
         os.close(w)
-        for line in os.fdopen(r, 'r', -1):
-            level, sep, msg = line.partition(': ')
-            level = level.rstrip().lower()
-            if level in ('debug', 'info', 'warning', 'error'):
-                getattr(treelog, level)(msg.rstrip())
+        with os.fdopen(r, 'r', -1) as lines:
+            for line in lines:
+                level, sep, msg = line.partition(': ')
+                level = level.rstrip().lower()
+                if level in ('debug', 'info', 'warning', 'error'):
+                    getattr(treelog, level)(msg.rstrip())
         if os.wait()[1]:
             raise RuntimeError('gmsh failed (for more information consider running with fork=False)')
 
