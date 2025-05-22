@@ -70,7 +70,7 @@ class TestShape(unittest.TestCase):
 
     def test_path(self):
         'Quarter wedge with radius 2 centered around x=3 y=2'
-        path = shape.Path(vertices=((1,2),(3,4)), curvatures=(0.,.5))
+        path = shape.Path(vertices=((1,2),(3,4)), angles=(0.,90.))
         shapes = dict(dom=path, line=path.segment[0], arc=path.segment[1])
         topo, geom = nutils_mesh(shapes, elemsize=.1, order=2)
         with self.subTest('interior'):

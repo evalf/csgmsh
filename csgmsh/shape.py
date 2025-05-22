@@ -366,30 +366,29 @@ class Ellipse(Shape):
 class Path(Shape):
     'Arbitrarily shaped domain enclosed by straight and curved boundary segments'
 
-    def __init__(self, vertices, curvatures: Optional[Tuple[float,...]] = None):
+    def __init__(self, vertices, angles: Optional[Tuple[float,...]] = None):
         self.vertices = tuple(vertices)
         assert all(len(v) == 2 for v in self.vertices)
-        self.curvatures = numpy.array(curvatures) if curvatures else numpy.zeros(len(self.vertices))
-        assert len(self.curvatures) == len(self.vertices)
+        self.angles = numpy.array(angles) if angles else numpy.zeros(len(self.vertices))
+        assert len(self.angles) == len(self.vertices)
+        assert all(abs(angle) <= 180 for angle in self.angles)
         super().__init__(ndims=2, nbnd=len(vertices))
 
     def add_to(self, occ):
         points = [(v, occ.addPoint(*v, 0.)) for v in self.vertices]
         points.append(points[0])
-        lines = [occ.addLine(p1, p2) if k == 0
-            else occ.addCircleArc(p1, occ.addPoint(*self._center(v1, v2, 1/k), 0.), p2)
-                for k, (v1, p1), (v2, p2) in zip(self.curvatures, points[:-1], points[1:])]
+        lines = [occ.addLine(p1, p2) if angle == 0
+            else occ.addCircleArc(p1, occ.addPoint(*self._center(v1, v2, angle), 0.), p2)
+                for angle, (v1, p1), (v2, p2) in zip(self.angles, points[:-1], points[1:])]
         loop = occ.addCurveLoop(lines)
         return (2, occ.addPlaneSurface([loop])),
 
     @staticmethod
-    def _center(v1, v2, r: float, nudge: float = 1e-7):
+    def _center(v1, v2, angle: float, maxangle=179.9):
         cx, cy = numpy.add(v1, v2) / 2
         dx, dy = numpy.subtract(v1, v2) / 2
-        r2 = dx**2 + dy**2
-        D2 = r**2 / r2 - 1 + nudge
-        assert D2 > 0, f'invalid arc radius: {r} < {numpy.sqrt(r2)}'
-        D = numpy.copysign(numpy.sqrt(D2), r)
+        angle = max(min(angle, maxangle), -maxangle)
+        D = numpy.tan((.5 - angle / 360) * numpy.pi)
         return cx + dy * D, cy - dx * D,
 
     @property
