@@ -6,19 +6,19 @@ def _tags(dimtags, expect_dim: int):
     return {tag for dim, tag in dimtags}
 
 
-def generate_mesh(model, groups, elemsize) -> None:
+def _generate_mesh(model, physical_groups, mesh_size) -> None:
 
-    if isinstance(groups, dict):
-        groups = groups.items()
+    if isinstance(physical_groups, dict):
+        physical_groups = physical_groups.items()
     else:
         seen = dict()
-        for name, entity in groups:
+        for name, entity in physical_groups:
             s = seen.setdefault(entity.ndims, set())
             if name in s:
                 raise ValueError(f'{name!r} occurs twice for dimension {entity.ndims}')
             s.add(name)
 
-    shapes = [shape for _, entity in groups for shape in entity.get_shapes()]
+    shapes = [shape for _, entity in physical_groups for shape in entity.get_shapes()]
     shapes = tuple(dict.fromkeys(shapes)) # stable unique via dict
 
     ndims = shapes[0].ndims
@@ -61,40 +61,56 @@ def generate_mesh(model, groups, elemsize) -> None:
         shape.make_periodic(model.mesh, btags)
         fragments[shape] = vtags, btags
 
-    for name, item in groups:
+    for name, item in physical_groups:
         tag = model.addPhysicalGroup(item.ndims, sorted(item.select(fragments)))
         model.setPhysicalName(dim=item.ndims, tag=tag, name=name)
 
-    if not isinstance(elemsize, (int, float)):
+    if not isinstance(mesh_size, (int, float)):
         ff = model.mesh.field
-        ff.setAsBackgroundMesh(elemsize.gettag(ff, fragments))
+        ff.setAsBackgroundMesh(mesh_size.gettag(ff, fragments))
 
     model.mesh.generate(ndims)
 
 
-def _write(fname: str, groups, elemsize, order: int) -> None:
+def _write(output_path: str, physical_groups, mesh_size, **mesh_options) -> None:
     import gmsh
     gmsh.initialize(interruptible=False)
     gmsh.option.setNumber('General.Terminal', 1)
-    gmsh.option.setNumber('Mesh.Binary', 1)
-    gmsh.option.setNumber('Mesh.ElementOrder', order)
-    if isinstance(elemsize, (int, float)):
-        gmsh.option.setNumber('Mesh.MeshSizeMin', elemsize)
-        gmsh.option.setNumber('Mesh.MeshSizeMax', elemsize)
-    else:
-        gmsh.option.setNumber('Mesh.CharacteristicLengthExtendFromBoundary', 0)
-        gmsh.option.setNumber('Mesh.CharacteristicLengthFromPoints', 0)
-        gmsh.option.setNumber('Mesh.CharacteristicLengthFromCurvature', 0)
-    generate_mesh(gmsh.model, groups, elemsize)
-    gmsh.write(fname)
+    mesh_options.setdefault('binary', 1)
+    mesh_options.setdefault('characteristic_length_extend_from_boundary', 0)
+    mesh_options.setdefault('characteristic_length_from_points', 0)
+    mesh_options.setdefault('characteristic_length_from_curvature', 0)
+    if isinstance(mesh_size, (int, float)):
+        mesh_options.setdefault('mesh_size_min', mesh_size)
+        mesh_options.setdefault('mesh_size_max', mesh_size)
+    for name, value in mesh_options.items():
+        gmsh.option.setNumber('Mesh.' + name.title().replace('_', ''), value)
+    _generate_mesh(gmsh.model, physical_groups, mesh_size)
+    gmsh.write(output_path)
     gmsh.finalize()
 
 
-def write(fname: str, groups, elemsize, order: int = 1, fork: bool = hasattr(os, 'fork')) -> None:
-    'Create .msh file based on Constructive Solid Geometry description.'
+def write(*, fork: bool = hasattr(os, 'fork'), **kwargs) -> None:
+    '''Create .msh file based on Constructive Solid Geometry description.
+
+    Arguments
+    ---------
+    output_path
+        Path of the output .msh file.
+    physical_groups
+        Dictionary of physical name -> Shape objects.
+    mesh_size
+        Field object for spatially varying element size, or a float for
+        constant element size.
+    **
+        Any mesh option can be specified as keyword arguments, with the
+        original camel case turned to snake case (e.g. element_order instead of
+        ElementOrder). See https://gmsh.info/doc/texinfo/gmsh.html#Mesh-options
+        for the full list of options.
+    '''
 
     if not fork:
-        return _write(fname, groups, elemsize, order)
+        return _write(**kwargs)
 
     r, w = os.pipe()
 
@@ -116,7 +132,7 @@ def write(fname: str, groups, elemsize, order: int = 1, fork: bool = hasattr(os,
         os.dup2(w, 1)
         os.dup2(w, 2)
         try:
-            _write(fname, groups, elemsize, order)
+            _write(**kwargs)
         except Exception as e:
             print('Error:', e)
             os._exit(1)

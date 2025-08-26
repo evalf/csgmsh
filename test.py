@@ -6,12 +6,12 @@ import tempfile
 import os
 
 
-def nutils_mesh(*args, **kwargs):
+def nutils_mesh(**kwargs):
     from nutils.mesh import gmsh
     fid, fname = tempfile.mkstemp(suffix='.msh')
     try:
         os.close(fid) # release file for writing by gmsh (windows)
-        mesh.write(fname, *args, **kwargs)
+        mesh.write(output_path=fname, **kwargs)
         return gmsh(fname)
     finally:
         os.unlink(fname)
@@ -30,7 +30,7 @@ class TestShape(unittest.TestCase):
         for periodic in ('', 'x', 'y', 'xy'):
             rect = shape.Rectangle(shape.Interval(1, 2, periodic='x' in periodic), shape.Interval(3, 4, periodic='y' in periodic))
             shapes = dict(dom=rect, left=rect.left, right=rect.right, bottom=rect.bottom, top=rect.top)
-            topo, geom = nutils_mesh(shapes, elemsize=.1)
+            topo, geom = nutils_mesh(physical_groups=shapes, mesh_size=.1)
             with self.subTest(f'interior(periodic={periodic})'):
                 self.assertAreaCentroid(topo, geom, mass=1, centroid=(1.5,3.5), places=10)
             volume = 0
@@ -53,7 +53,7 @@ class TestShape(unittest.TestCase):
     def test_circle(self):
         'Circle with radius .5 centered around x=1 y=2'
         circ = shape.Circle(center=(1.,2.),radius=.5)
-        topo, geom = nutils_mesh(dict(dom=circ), elemsize=.1, order=2)
+        topo, geom = nutils_mesh(physical_groups=dict(dom=circ), mesh_size=.1, element_order=2)
         with self.subTest('interior'):
             self.assertAreaCentroid(topo, geom, mass=.25*numpy.pi, centroid=(1,2), degree=2, places=5)
         with self.subTest('boundary'):
@@ -62,7 +62,7 @@ class TestShape(unittest.TestCase):
     def test_ellipse(self):
         'Ellipse with width .5, height 1, centered around x=1 y=2 and rotated by 30deg'
         ellipse = shape.Ellipse(center=(1.,2.),width=1.,height=2.,angle=30.)
-        topo, geom = nutils_mesh(dict(dom=ellipse), elemsize=.1, order=2)
+        topo, geom = nutils_mesh(physical_groups=dict(dom=ellipse), mesh_size=.1, element_order=2)
         with self.subTest('interior'):
             self.assertAreaCentroid(topo, geom, mass=.5*numpy.pi, centroid=(1,2), degree=2, places=5)
         with self.subTest('boundary'):
@@ -72,7 +72,7 @@ class TestShape(unittest.TestCase):
         'Quarter wedge with radius 2 centered around x=3 y=2'
         path = shape.Path(vertices=((1,2),(3,4)), angles=(0.,90.))
         shapes = dict(dom=path, line=path.segment[0], arc=path.segment[1])
-        topo, geom = nutils_mesh(shapes, elemsize=.1, order=2)
+        topo, geom = nutils_mesh(physical_groups=shapes, mesh_size=.1, element_order=2)
         with self.subTest('interior'):
             area = numpy.pi - 2
             self.assertAreaCentroid(topo, geom, mass=area, centroid=(3-4/3/area, 2+4/3/area), degree=2, places=6)
@@ -86,7 +86,7 @@ class TestShape(unittest.TestCase):
         for periodic in ('', 'x', 'y', 'z', 'yz', 'xz', 'yz', 'xyz'):
             box = shape.Box(shape.Interval(1, 2, periodic='x' in periodic), shape.Interval(3, 4, periodic='y' in periodic), shape.Interval(5, 6, periodic='z' in periodic))
             shapes = dict(dom=box, left=box.left, right=box.right, bottom=box.bottom, top=box.top, front=box.front, back=box.back)
-            topo, geom = nutils_mesh(shapes, elemsize=.2)
+            topo, geom = nutils_mesh(physical_groups=shapes, mesh_size=.2)
             with self.subTest(f'interior(periodic={periodic})'):
                 self.assertAreaCentroid(topo, geom, mass=1, centroid=(1.5,3.5,5.5), places=10)
             volume = 0
@@ -115,7 +115,7 @@ class TestShape(unittest.TestCase):
         'Sphere with radius .5 centered at (1,2,3)'
         sphere = shape.Sphere(center=(1,2,3), radius=.5)
         shapes = dict(dom=sphere, wall=sphere.boundary)
-        topo, geom = nutils_mesh(shapes, elemsize=.095, order=2)
+        topo, geom = nutils_mesh(physical_groups=shapes, mesh_size=.095, element_order=2)
         with self.subTest(f'interior'):
             self.assertAreaCentroid(topo, geom, mass=numpy.pi/6, centroid=(1,2,3), degree=2, places=4)
         with self.subTest(f'boundary'):
@@ -126,7 +126,7 @@ class TestShape(unittest.TestCase):
         for periodic in False, True:
             cyl = shape.Cylinder(front=(1,2,3), back=(4,5,6), radius=.5, periodic=periodic)
             shapes = dict(dom=cyl, side=cyl.side, front=cyl.front, back=cyl.back)
-            topo, geom = nutils_mesh(shapes, elemsize=.1, order=2)
+            topo, geom = nutils_mesh(physical_groups=shapes, mesh_size=.1, element_order=2)
             L = 3 * numpy.sqrt(3)
             A = numpy.pi * .5**2
             with self.subTest(f'interior(periodic={periodic})'):
@@ -149,7 +149,7 @@ class TestShape(unittest.TestCase):
         for simple in True, False:
             cut = rect - circ if simple else shape.Cut(rect, circ)
             shapes = dict(dom=cut, circ=circ.boundary, left=rect.left, right=rect.right, bottom=rect.bottom, top=rect.top)
-            topo, geom = nutils_mesh(shapes, elemsize=.1, order=2)
+            topo, geom = nutils_mesh(physical_groups=shapes, mesh_size=.1, element_order=2)
             with self.subTest('simple interior' if simple else 'occ interior'):
                 volume = 1 - numpy.pi/16
                 c = 1 - 11/24/volume
@@ -167,7 +167,7 @@ class TestShape(unittest.TestCase):
         circ = shape.Circle(center=(1.,.5), radius=.5)
         for simple in True, False:
             fuse = rect | circ if simple else shape.Fuse(rect, circ)
-            topo, geom = nutils_mesh(dict(dom=fuse), elemsize=.1, order=2)
+            topo, geom = nutils_mesh(physical_groups=dict(dom=fuse), mesh_size=.1, element_order=2)
             with self.subTest('simple interior' if simple else 'occ interior'):
                 volume = 1 + numpy.pi/8
                 self.assertAreaCentroid(topo, geom, mass=volume, centroid=((7/12+numpy.pi/8)/volume,.5), degree=2, places=5)
@@ -181,7 +181,7 @@ class TestShape(unittest.TestCase):
         circ = shape.Circle(center=(1.,.5), radius=.5)
         for simple in True, False:
             intersect = rect & circ if simple else shape.Intersect(rect, circ)
-            topo, geom = nutils_mesh(dict(dom=intersect), elemsize=.1, order=2)
+            topo, geom = nutils_mesh(physical_groups=dict(dom=intersect), mesh_size=.1, element_order=2)
             with self.subTest('simple interior' if simple else 'occ interior'):
                 volume = numpy.pi/8
                 self.assertAreaCentroid(topo, geom, mass=volume, centroid=((numpy.pi/8-1/12)/volume,.5), degree=2, places=5)
@@ -195,7 +195,7 @@ class TestShape(unittest.TestCase):
         rev = line.revolved(origin=orig, xaxis=(1,-1), angle=90)
         # xaxis is rotated from (1,-1) to (1,1)
         shapes = dict(dom=rev, front=rev.front, back=rev.back, left=rev.side.left, right=rev.side.right)
-        topo, geom = nutils_mesh(shapes, elemsize=.1, order=2)
+        topo, geom = nutils_mesh(physical_groups=shapes, mesh_size=.1, element_order=2)
         with self.subTest('interior'):
             volume = numpy.pi * 3 / 4
             self.assertAreaCentroid(topo, geom, mass=volume, centroid=orig+((7/3)*numpy.sqrt(2)/volume,0), degree=2, places=6)
@@ -214,7 +214,7 @@ class TestShape(unittest.TestCase):
         rev = rect.revolved(origin=orig, xaxis=(-1,0,1), yaxis=(0,1,0), angle=-90)
         # x-axis is rotated from (-1,0,1) to (-1,0,-1)
         shapes = dict(dom=rev, front=rev.front, back=rev.back, left=rev.side.left, right=rev.side.right, bottom=rev.side.bottom, top=rev.side.top)
-        topo, geom = nutils_mesh(shapes, elemsize=.1, order=2)
+        topo, geom = nutils_mesh(physical_groups=shapes, mesh_size=.1, element_order=2)
         with self.subTest('interior'):
             volume = numpy.pi * 3 / 4
             cx = -(7/3)*numpy.sqrt(2)/volume
@@ -235,7 +235,7 @@ class TestShape(unittest.TestCase):
         rect = shape.Rectangle(x=shape.Interval(1,2))
         rev = rect.revolved(origin=orig, xaxis=(-1,0,1), yaxis=(0,1,0), angle=360)
         shapes = dict(dom=rev, left=rev.side.left, right=rev.side.right, bottom=rev.side.bottom, top=rev.side.top)
-        topo, geom = nutils_mesh(shapes, elemsize=.1, order=2)
+        topo, geom = nutils_mesh(physical_groups=shapes, mesh_size=.1, element_order=2)
         with self.subTest('interior'):
             self.assertAreaCentroid(topo, geom, mass=3*numpy.pi, centroid=orig+(0,.5,0), degree=2, places=6)
         with self.subTest('boundary'):
@@ -253,7 +253,7 @@ class TestShape(unittest.TestCase):
             left0=pipe.segment[0].left, right0=pipe.segment[0].right,
             left1=pipe.segment[1].left, right1=pipe.segment[1].right,
             left2=pipe.segment[2].left, right2=pipe.segment[2].right)
-        topo, geom = nutils_mesh(shapes, elemsize=.1, order=2)
+        topo, geom = nutils_mesh(physical_groups=shapes, mesh_size=.1, element_order=2)
         with self.subTest('interior'):
             V = numpy.pi * 5 + 2
             M = -8 * numpy.pi - 13, 15 * numpy.pi - 6
@@ -276,7 +276,7 @@ class TestShape(unittest.TestCase):
             left0=pipe.segment[0].left, right0=pipe.segment[0].right, bottom0=pipe.segment[0].bottom, top0=pipe.segment[0].top,
             left1=pipe.segment[1].left, right1=pipe.segment[1].right, bottom1=pipe.segment[1].bottom, top1=pipe.segment[1].top,
             left2=pipe.segment[2].left, right2=pipe.segment[2].right, bottom2=pipe.segment[2].bottom, top2=pipe.segment[2].top)
-        topo, geom = nutils_mesh(shapes, elemsize=.1, order=2)
+        topo, geom = nutils_mesh(physical_groups=shapes, mesh_size=.1, element_order=2)
         with self.subTest('interior'):
             V = numpy.pi * (7/2) + 2
             M = 4 * numpy.pi - 11/3, 1 - 5 * numpy.pi, 38/3 + numpy.pi * 3
@@ -303,7 +303,7 @@ class TestShape(unittest.TestCase):
         shapes = dict(dom=outer-inner,
             innerleft=inner.left, innerright=inner.right, innertop=inner.top, innerbottom=inner.bottom, innerfront=inner.front, innerback=inner.back,
             outerleft=outer.left, outerright=outer.right, outertop=outer.top, outerbottom=outer.bottom, outerfront=outer.front, outerback=outer.back)
-        topo, geom = nutils_mesh(shapes, elemsize=.5, order=2)
+        topo, geom = nutils_mesh(physical_groups=shapes, mesh_size=.5, element_order=2)
         with self.subTest('interior'):
             self.assertAreaCentroid(topo, geom, mass=56, centroid=(0,0,0), degree=1, places=12)
         with self.subTest('boundary'):
