@@ -86,6 +86,10 @@ def _write(output_path: str, physical_groups, mesh_size, **mesh_options) -> None
     for name, value in mesh_options.items():
         gmsh.option.setNumber('Mesh.' + name.title().replace('_', ''), value)
     _generate_mesh(gmsh.model, physical_groups, mesh_size)
+    gmsh.plugin.setNumber("AnalyseMeshQuality", "JacobianDeterminant", 1)
+    gmsh.plugin.setNumber("AnalyseMeshQuality", "IGEMeasure", 1)
+    gmsh.plugin.setNumber("AnalyseMeshQuality", "ICNMeasure", 1)
+    gmsh.plugin.run("AnalyseMeshQuality")
     gmsh.write(output_path)
     gmsh.finalize()
 
