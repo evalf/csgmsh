@@ -474,6 +474,17 @@ class Cylinder(Shape):
         return BoundarySegment(self, 2)
 
 
+class STEP(Shape):
+    'STEP File'
+
+    def __init__(self, path):
+        self.path = path
+        super().__init__(ndims=3, nbnd=None)
+
+    def add_to(self, occ):
+        return occ.importShapes(self.path)
+
+
 class Cut(Shape):
 
     def __init__(self, shape1: Shape, shape2: Shape):
