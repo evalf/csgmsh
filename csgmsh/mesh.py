@@ -7,7 +7,6 @@ def _tags(dimtags, expect_dim: int):
 
 
 def _generate_mesh(model, physical_groups, mesh_size) -> None:
-
     if isinstance(physical_groups, dict):
         physical_groups = physical_groups.items()
     else:
@@ -15,18 +14,20 @@ def _generate_mesh(model, physical_groups, mesh_size) -> None:
         for name, entity in physical_groups:
             s = seen.setdefault(entity.ndims, set())
             if name in s:
-                raise ValueError(f'{name!r} occurs twice for dimension {entity.ndims}')
+                raise ValueError(f"{name!r} occurs twice for dimension {entity.ndims}")
             s.add(name)
 
     shapes = [shape for _, entity in physical_groups for shape in entity.get_shapes()]
-    shapes = tuple(dict.fromkeys(shapes)) # stable unique via dict
+    shapes = tuple(dict.fromkeys(shapes))  # stable unique via dict
 
     ndims = shapes[0].ndims
     if not all(shape.ndims == ndims for shape in shapes):
-        raise ValueError('mesh contains shapes of varying dimensions')
+        raise ValueError("mesh contains shapes of varying dimensions")
 
-    shape_tags = [shape.add_to(model.occ) for shape in shapes] # create all shapes before sync
-    model.occ.synchronize() # required for getBoundary
+    shape_tags = [
+        shape.add_to(model.occ) for shape in shapes
+    ]  # create all shapes before sync
+    model.occ.synchronize()  # required for getBoundary
 
     objectDimTags: List[Tuple[int, Tag]] = []
     slices = []
@@ -39,7 +40,9 @@ def _generate_mesh(model, physical_groups, mesh_size) -> None:
         a = len(objectDimTags)
         bslice = slice(b, a)
         slices.append((vslice, bslice))
-    _, fragment_map = model.occ.fragment(objectDimTags=objectDimTags, toolDimTags=[], removeObject=False)
+    _, fragment_map = model.occ.fragment(
+        objectDimTags=objectDimTags, toolDimTags=[], removeObject=False
+    )
     assert len(fragment_map) == a
 
     model.occ.synchronize()
@@ -55,8 +58,10 @@ def _generate_mesh(model, physical_groups, mesh_size) -> None:
 
     fragments = {}
     for shape, (vslice, bslice) in zip(shapes, slices):
-        vtags = _tags([dimtag for dimtags in fragment_map[vslice] for dimtag in dimtags], ndims)
-        btags = [_tags(dimtags, ndims-1) for dimtags in fragment_map[bslice]]
+        vtags = _tags(
+            [dimtag for dimtags in fragment_map[vslice] for dimtag in dimtags], ndims
+        )
+        btags = [_tags(dimtags, ndims - 1) for dimtags in fragment_map[bslice]]
         assert shape.nbnd is None or shape.nbnd == len(btags)
         shape.make_periodic(model.mesh, btags)
         fragments[shape] = vtags, btags
@@ -74,17 +79,18 @@ def _generate_mesh(model, physical_groups, mesh_size) -> None:
 
 def _write(output_path: str, physical_groups, mesh_size, **mesh_options) -> None:
     import gmsh
+
     gmsh.initialize(interruptible=False)
-    gmsh.option.setNumber('General.Terminal', 1)
-    mesh_options.setdefault('binary', 1)
-    mesh_options.setdefault('characteristic_length_extend_from_boundary', 0)
-    mesh_options.setdefault('characteristic_length_from_points', 0)
-    mesh_options.setdefault('characteristic_length_from_curvature', 0)
+    gmsh.option.setNumber("General.Terminal", 1)
+    mesh_options.setdefault("binary", 1)
+    mesh_options.setdefault("characteristic_length_extend_from_boundary", 0)
+    mesh_options.setdefault("characteristic_length_from_points", 0)
+    mesh_options.setdefault("characteristic_length_from_curvature", 0)
     if isinstance(mesh_size, (int, float)):
-        mesh_options.setdefault('mesh_size_min', mesh_size)
-        mesh_options.setdefault('mesh_size_max', mesh_size)
+        mesh_options.setdefault("mesh_size_min", mesh_size)
+        mesh_options.setdefault("mesh_size_max", mesh_size)
     for name, value in mesh_options.items():
-        gmsh.option.setNumber('Mesh.' + name.title().replace('_', ''), value)
+        gmsh.option.setNumber("Mesh." + name.title().replace("_", ""), value)
     _generate_mesh(gmsh.model, physical_groups, mesh_size)
     gmsh.plugin.setNumber("AnalyseMeshQuality", "JacobianDeterminant", 1)
     gmsh.plugin.setNumber("AnalyseMeshQuality", "IGEMeasure", 1)
@@ -94,8 +100,8 @@ def _write(output_path: str, physical_groups, mesh_size, **mesh_options) -> None
     gmsh.finalize()
 
 
-def write(*, fork: bool = hasattr(os, 'fork'), **kwargs) -> None:
-    '''Create .msh file based on Constructive Solid Geometry description.
+def write(*, fork: bool = hasattr(os, "fork"), **kwargs) -> None:
+    """Create .msh file based on Constructive Solid Geometry description.
 
     Arguments
     ---------
@@ -111,34 +117,34 @@ def write(*, fork: bool = hasattr(os, 'fork'), **kwargs) -> None:
         original camel case turned to snake case (e.g. element_order instead of
         ElementOrder). See https://gmsh.info/doc/texinfo/gmsh.html#Mesh-options
         for the full list of options.
-    '''
+    """
 
     if not fork:
         return _write(**kwargs)
 
     r, w = os.pipe()
 
-    if os.fork(): # parent process
-
+    if os.fork():  # parent process
         os.close(w)
-        with os.fdopen(r, 'r', -1) as lines:
+        with os.fdopen(r, "r", -1) as lines:
             for line in lines:
-                level, sep, msg = line.partition(': ')
+                level, sep, msg = line.partition(": ")
                 level = level.rstrip().lower()
-                if level in ('debug', 'info', 'warning', 'error'):
+                if level in ("debug", "info", "warning", "error"):
                     getattr(treelog, level)(msg.rstrip())
         if os.wait()[1]:
-            raise RuntimeError('gmsh failed (for more information consider running with fork=False)')
+            raise RuntimeError(
+                "gmsh failed (for more information consider running with fork=False)"
+            )
 
-    else: # child process
-
+    else:  # child process
         os.close(r)
         os.dup2(w, 1)
         os.dup2(w, 2)
         try:
             _write(**kwargs)
         except Exception as e:
-            print('Error:', e)
+            print("Error:", e)
             os._exit(1)
         except:
             os._exit(1)
