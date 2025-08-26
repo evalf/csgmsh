@@ -1,7 +1,6 @@
 from typing import Tuple, Union
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-import math
 
 
 AsField = Union["Field", int, float]
@@ -89,7 +88,9 @@ class Distance(Field):
             elif entity.ndims == 0:
                 points.update(tags)
             else:
-                bla
+                raise ValueError(
+                    f"entity {entity} has invalid dimension {entity.ndims}"
+                )
         if surfaces:
             ff.setNumbers(tag, "SurfacesList", sorted(surfaces))
         if curves:

@@ -241,11 +241,11 @@ class TestShape(unittest.TestCase):
         topo, geom = nutils_mesh(
             physical_groups=shapes, mesh_size=0.095, element_order=2
         )
-        with self.subTest(f"interior"):
+        with self.subTest("interior"):
             self.assertAreaCentroid(
                 topo, geom, mass=numpy.pi / 6, centroid=(1, 2, 3), degree=2, places=4
             )
-        with self.subTest(f"boundary"):
+        with self.subTest("boundary"):
             self.assertAreaCentroid(
                 topo.boundary,
                 geom,

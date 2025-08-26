@@ -1,4 +1,5 @@
-import os, treelog
+import os
+import treelog
 
 
 def _tags(dimtags, expect_dim: int):
@@ -29,7 +30,7 @@ def _generate_mesh(model, physical_groups, mesh_size) -> None:
     ]  # create all shapes before sync
     model.occ.synchronize()  # required for getBoundary
 
-    objectDimTags: List[Tuple[int, Tag]] = []
+    objectDimTags = []
     slices = []
     a = 0
     for dimtags in shape_tags:
@@ -146,7 +147,7 @@ def write(*, fork: bool = hasattr(os, "fork"), **kwargs) -> None:
         except Exception as e:
             print("Error:", e)
             os._exit(1)
-        except:
+        except:  # noqa: E722
             os._exit(1)
         else:
             os._exit(0)

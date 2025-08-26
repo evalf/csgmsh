@@ -1,6 +1,8 @@
 from typing import Tuple, Optional, Iterable, Sequence, NamedTuple
 from abc import ABC, abstractmethod
-import numpy, re, math, functools
+import numpy
+import math
+import functools
 
 
 class Axes2:
@@ -70,11 +72,11 @@ class Axes3:
         return 3
 
     def __getitem__(self, s):
-        I = numpy.eye(3)[s]
+        eye = numpy.eye(3)[s]
         return 2 * (
-            (0.5 - self._v @ self._v) * I
+            (0.5 - self._v @ self._v) * eye
             + self._v[s, numpy.newaxis] * self._v
-            + numpy.cross(I, self._w * self._v)
+            + numpy.cross(eye, self._w * self._v)
         )
 
     def rotate(self, rotvec) -> "Axes3":
